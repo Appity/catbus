@@ -1,7 +1,7 @@
 version: "3.8"
 
 services:
-  catbus:
+  catbusd:
     build: .
     ports:
       - "4433:4433/udp"
@@ -9,15 +9,11 @@ services:
       - DATABASE_URL=postgres://catbus:catbus@postgres:5432/catbus
       - CATBUS_SECRET=dev-secret-change-in-production
       - CATBUS_ADMIN_KEY=admin-key-change-in-production
+      - CATBUS_CERT=/app/certs/cert.pem
+      - CATBUS_KEY=/app/certs/key.pem
       - RUST_LOG=info
     volumes:
       - ./certs:/app/certs:ro
-    command:
-      - serve
-      - --bind=0.0.0.0:4433
-      - --cert=/app/certs/cert.pem
-      - --key=/app/certs/key.pem
-      - --secret=${CATBUS_SECRET:-dev-secret}
     depends_on:
       postgres:
         condition: service_healthy

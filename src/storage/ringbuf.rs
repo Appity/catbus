@@ -56,23 +56,76 @@ impl RingBuffer {
     }
 
     /// Get all messages after a given sequence number
+    ///
+    /// Uses binary search since messages are ordered by sequence number.
     pub fn get_after(&self, after_seq: u64) -> Vec<BufferedMessage> {
         let messages = self.messages.read();
+
+        if messages.is_empty() {
+            return Vec::new();
+        }
+
+        // Binary search to find the first message with seq > after_seq
+        let start_idx = self.binary_search_after(&messages, after_seq);
+
+        // Collect from start_idx to end
+        messages.iter().skip(start_idx).cloned().collect()
+    }
+
+    /// Get all messages after a sequence number for a specific channel pattern
+    ///
+    /// Uses binary search to find starting point, then filters by channel.
+    pub fn get_after_for_channel(&self, after_seq: u64, channel_prefix: &str) -> Vec<BufferedMessage> {
+        let messages = self.messages.read();
+
+        if messages.is_empty() {
+            return Vec::new();
+        }
+
+        // Binary search to find the first message with seq > after_seq
+        let start_idx = self.binary_search_after(&messages, after_seq);
+
+        // Filter remaining messages by channel prefix
         messages
             .iter()
-            .filter(|m| m.seq > after_seq)
+            .skip(start_idx)
+            .filter(|m| m.channel.starts_with(channel_prefix))
             .cloned()
             .collect()
     }
 
-    /// Get all messages after a sequence number for a specific channel pattern
-    pub fn get_after_for_channel(&self, after_seq: u64, channel_prefix: &str) -> Vec<BufferedMessage> {
-        let messages = self.messages.read();
-        messages
-            .iter()
-            .filter(|m| m.seq > after_seq && m.channel.starts_with(channel_prefix))
-            .cloned()
-            .collect()
+    /// Binary search to find index of first message with seq > target
+    fn binary_search_after(&self, messages: &VecDeque<BufferedMessage>, target_seq: u64) -> usize {
+        if messages.is_empty() {
+            return 0;
+        }
+
+        // Check bounds first
+        if let Some(first) = messages.front() {
+            if first.seq > target_seq {
+                return 0;
+            }
+        }
+        if let Some(last) = messages.back() {
+            if last.seq <= target_seq {
+                return messages.len();
+            }
+        }
+
+        // Binary search
+        let mut left = 0;
+        let mut right = messages.len();
+
+        while left < right {
+            let mid = left + (right - left) / 2;
+            if messages[mid].seq <= target_seq {
+                left = mid + 1;
+            } else {
+                right = mid;
+            }
+        }
+
+        left
     }
 
     /// Get the current sequence number (for "since" tracking)

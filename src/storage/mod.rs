@@ -7,13 +7,14 @@ mod postgres;
 mod ringbuf;
 
 pub use postgres::{PostgresConfig, PostgresStore};
-pub use ringbuf::RingBuffer;
+pub use ringbuf::{BufferedMessage, RingBuffer};
 
 use crate::auth::GrantSet;
 pub use async_trait::async_trait;
 use thiserror::Error;
 
-#[derive(Debug, Error)]
+/// Storage errors
+#[derive(Debug, Clone, Error)]
 pub enum StorageError {
     #[error("database error: {0}")]
     Database(String),

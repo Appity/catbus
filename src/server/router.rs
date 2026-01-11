@@ -6,6 +6,7 @@ use std::sync::Arc;
 use tracing::{debug, warn};
 
 /// Routes messages to subscribed clients
+#[derive(Clone)]
 pub struct TopicRouter {
     connections: Arc<ConnectionManager>,
 }

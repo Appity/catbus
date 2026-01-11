@@ -105,19 +105,20 @@ impl ClientConnection {
 }
 
 /// Manages all active connections
+#[derive(Clone)]
 pub struct ConnectionManager {
     /// All active connections by ID
-    connections: DashMap<Uuid, Arc<ClientConnection>>,
+    connections: Arc<DashMap<Uuid, Arc<ClientConnection>>>,
     /// Index: channel prefix -> connection IDs that might be interested
     /// This allows O(1) lookup for most common case (exact channel match)
-    prefix_index: DashMap<String, HashSet<Uuid>>,
+    prefix_index: Arc<DashMap<String, HashSet<Uuid>>>,
 }
 
 impl ConnectionManager {
     pub fn new() -> Self {
         Self {
-            connections: DashMap::new(),
-            prefix_index: DashMap::new(),
+            connections: Arc::new(DashMap::new()),
+            prefix_index: Arc::new(DashMap::new()),
         }
     }
 
@@ -163,6 +164,11 @@ impl ConnectionManager {
         }
 
         result
+    }
+
+    /// Alias for find_subscribers (for test compatibility)
+    pub fn get_subscribers_for_channel(&self, channel: &crate::channels::Channel) -> Vec<Arc<ClientConnection>> {
+        self.find_subscribers(channel)
     }
 
     /// Get total connection count

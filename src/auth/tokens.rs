@@ -189,7 +189,7 @@ pub struct RoleToken {
 impl RoleToken {
     /// Generate a new role token
     pub fn generate() -> Self {
-        let mut rng = rand::thread_rng();
+        let mut rng = rand::rng();
         let mut bytes = [0u8; 16];
         rng.fill(&mut bytes);
 

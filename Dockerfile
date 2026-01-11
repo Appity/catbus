@@ -12,9 +12,10 @@ RUN apt-get update && apt-get install -y \
 # Copy manifests
 COPY Cargo.toml Cargo.lock ./
 
-# Create dummy main.rs to cache dependencies
-RUN mkdir src && \
-    echo "fn main() {}" > src/main.rs && \
+# Create dummy source to cache dependencies
+RUN mkdir -p src/bin && \
+    echo "fn main() {}" > src/bin/catbus.rs && \
+    echo "fn main() {}" > src/bin/catbusd.rs && \
     echo "pub fn dummy() {}" > src/lib.rs
 
 # Build dependencies (this layer is cached)
@@ -24,8 +25,8 @@ RUN cargo build --release && \
 # Copy actual source
 COPY src ./src
 
-# Touch main.rs to trigger rebuild with actual code
-RUN touch src/main.rs && \
+# Touch sources to trigger rebuild with actual code
+RUN touch src/bin/catbusd.rs src/bin/catbus.rs && \
     cargo build --release
 
 # Runtime stage
@@ -39,7 +40,8 @@ RUN apt-get update && apt-get install -y \
     libssl3 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy binary from builder
+# Copy binaries from builder
+COPY --from=builder /app/target/release/catbusd /usr/local/bin/catbusd
 COPY --from=builder /app/target/release/catbus /usr/local/bin/catbus
 
 # Create non-root user
@@ -49,8 +51,9 @@ USER catbus
 # Default environment variables
 ENV RUST_LOG=info
 
-# Expose WebTransport port
+# Expose WebTransport port (UDP for QUIC)
 EXPOSE 4433/udp
 
-ENTRYPOINT ["catbus"]
-CMD ["serve", "--bind", "0.0.0.0:4433"]
+# Run daemon in foreground (for Docker/k8s)
+ENTRYPOINT ["catbusd"]
+CMD ["--bind", "0.0.0.0:4433"]
