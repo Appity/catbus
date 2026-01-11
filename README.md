@@ -79,7 +79,7 @@ Catbus ships as two binaries:
 
 ## catbusd
 
-The WebTransport server daemon.
+The server daemon supporting both WebTransport (QUIC/UDP) and WebSocket (HTTP/TCP) transports.
 
 ```bash
 catbusd [OPTIONS]
@@ -87,7 +87,8 @@ catbusd [OPTIONS]
 
 | Option | Env | Description |
 |--------|-----|-------------|
-| `-b, --bind` | `CATBUS_BIND` | Address to bind (default: `0.0.0.0:4433`) |
+| `-b, --bind` | `CATBUS_BIND` | WebTransport address (default: `0.0.0.0:4433`) |
+| `--ws-bind` | `CATBUS_WS_BIND` | WebSocket address (optional) |
 | `--cert` | `CATBUS_CERT` | Path to TLS certificate (PEM) |
 | `--key` | `CATBUS_KEY` | Path to TLS private key (PEM) |
 | `--secret` | `CATBUS_SECRET` | Token signing secret |
@@ -100,8 +101,11 @@ catbusd [OPTIONS]
 ### Examples
 
 ```bash
-# Foreground (for Docker/systemd)
+# WebTransport only (for direct/internal access)
 catbusd --cert cert.pem --key key.pem
+
+# Both transports (for external access via reverse proxy)
+catbusd --cert cert.pem --key key.pem --ws-bind 0.0.0.0:8080
 
 # Background daemon with pidfile
 catbusd -d --pidfile /var/run/catbusd.pid
@@ -111,6 +115,7 @@ export DATABASE_URL=postgres://localhost/catbus
 export CATBUS_SECRET=my-secret
 export CATBUS_CERT=/etc/catbus/cert.pem
 export CATBUS_KEY=/etc/catbus/key.pem
+export CATBUS_WS_BIND=0.0.0.0:8080
 
 catbusd
 ```
@@ -212,6 +217,15 @@ docker build -t catbus .
 # Run with docker-compose
 docker-compose up
 ```
+
+## Kubernetes
+
+See [K8S.md](./K8S.md) for detailed Kubernetes deployment guidance, including:
+
+- Deployment manifests and services
+- Traefik IngressRoute configuration
+- Why WebTransport can't be proxied through ingress controllers
+- Recommended architecture for external (WebSocket) vs internal (WebTransport) traffic
 
 ## Client Libraries
 

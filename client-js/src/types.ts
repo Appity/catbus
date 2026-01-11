@@ -65,6 +65,22 @@ export interface CatbusConfig {
   maxReconnectDelay?: number;
   /** Ping interval in ms (default: 30000) */
   pingInterval?: number;
+  /** Queue messages when disconnected (default: true) */
+  offlineQueue?: boolean;
+  /** Maximum queued messages before dropping oldest (default: 100) */
+  maxQueueSize?: number;
+  /** Jitter factor for reconnect delay at max (0-1, default: 0.3) */
+  reconnectJitter?: number;
+}
+
+/**
+ * Queued message for offline buffering
+ */
+export interface QueuedMessage {
+  channel: string;
+  payload: unknown;
+  resolve: () => void;
+  reject: (e: Error) => void;
 }
 
 /**

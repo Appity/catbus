@@ -4,6 +4,7 @@ export type {
   ClientMessage,
   ConnectionState,
   MessageHandler,
+  QueuedMessage,
   ServerMessage,
   StateChangeHandler,
   Subscription,

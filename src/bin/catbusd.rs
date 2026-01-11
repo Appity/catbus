@@ -1,8 +1,8 @@
-//! Catbus daemon - WebTransport message bus server
+//! Catbus daemon - WebTransport and WebSocket message bus server
 
 use anyhow::{Context, Result};
 use catbus::auth::AdminKey;
-use catbus::server::{CatbusServer, CatbusServerConfig};
+use catbus::server::{CatbusServer, CatbusServerConfig, WsState, run_websocket_server};
 use catbus::storage::{PostgresConfig, PostgresStore};
 use clap::Parser;
 use std::path::PathBuf;
@@ -13,12 +13,16 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 
 #[derive(Parser)]
 #[command(name = "catbusd")]
-#[command(about = "Catbus WebTransport message bus daemon")]
+#[command(about = "Catbus WebTransport and WebSocket message bus daemon")]
 #[command(version)]
 struct Args {
-    /// Address to bind to
+    /// Address to bind WebTransport to (UDP/QUIC)
     #[arg(short, long, default_value = "0.0.0.0:4433", env = "CATBUS_BIND")]
     bind: String,
+
+    /// Address to bind WebSocket to (TCP/HTTP)
+    #[arg(long, env = "CATBUS_WS_BIND")]
+    ws_bind: Option<String>,
 
     /// Path to TLS certificate (PEM)
     #[arg(long, env = "CATBUS_CERT")]
@@ -132,18 +136,45 @@ async fn run_server(args: Args) -> Result<()> {
     let bind_addr = args.bind.parse().context("Invalid bind address")?;
 
     // Build config
+    let admin_key = args.admin_key.map(AdminKey::new);
+    let token_secret = args.secret.into_bytes();
+
     let config = CatbusServerConfig {
         bind_addr,
         cert_pem: cert,
         key_pem: key,
-        token_secret: args.secret.into_bytes(),
-        admin_key: args.admin_key.map(AdminKey::new),
+        token_secret: token_secret.clone(),
+        admin_key: admin_key.clone(),
     };
 
-    // Create and run server
-    let server = CatbusServer::new(config, store);
+    // Create WebTransport server
+    let server = CatbusServer::new(config, store.clone());
 
-    info!(addr = %args.bind, "Catbus daemon starting");
+    info!(addr = %args.bind, "Catbus daemon starting (WebTransport)");
+
+    // Optionally start WebSocket server
+    let ws_handle = if let Some(ws_bind) = &args.ws_bind {
+        let ws_addr = ws_bind.parse().context("Invalid WebSocket bind address")?;
+
+        // Create WebSocket state sharing the same connection manager and router
+        let ws_state = WsState {
+            connections: server.connections().clone(),
+            router: server.router(),
+            role_store: store.clone(),
+            token_secret,
+            admin_key,
+        };
+
+        info!(addr = %ws_bind, "Catbus daemon starting (WebSocket)");
+
+        Some(tokio::spawn(async move {
+            if let Err(e) = run_websocket_server(ws_addr, ws_state).await {
+                warn!(error = %e, "WebSocket server error");
+            }
+        }))
+    } else {
+        None
+    };
 
     // Run server with graceful shutdown on signals
     tokio::select! {
@@ -153,6 +184,11 @@ async fn run_server(args: Args) -> Result<()> {
         _ = shutdown_signal() => {
             info!("Shutdown signal received, stopping server");
         }
+    }
+
+    // Abort WebSocket server if running
+    if let Some(handle) = ws_handle {
+        handle.abort();
     }
 
     // Cleanup pidfile if it exists

@@ -146,6 +146,11 @@ impl CatbusServer {
         self.router.clone()
     }
 
+    /// Get a reference to the connection manager (for sharing with WebSocket)
+    pub fn connections(&self) -> &Arc<ConnectionManager> {
+        &self.connections
+    }
+
     /// Get connection count
     pub fn connection_count(&self) -> usize {
         self.connections.count()

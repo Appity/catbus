@@ -1,5 +1,5 @@
 # Build stage
-FROM rust:1.83-slim-bookworm AS builder
+FROM rust:1.92-slim-bookworm AS builder
 
 WORKDIR /app
 
@@ -20,14 +20,14 @@ RUN mkdir -p src/bin && \
 
 # Build dependencies (this layer is cached)
 RUN cargo build --release && \
-    rm -rf src
+    rm -rf src target/release/deps/catbus-* target/release/deps/libcatbus-* \
+           target/release/catbus target/release/catbusd
 
 # Copy actual source
 COPY src ./src
 
-# Touch sources to trigger rebuild with actual code
-RUN touch src/bin/catbusd.rs src/bin/catbus.rs && \
-    cargo build --release
+# Build actual binaries
+RUN cargo build --release
 
 # Runtime stage
 FROM debian:bookworm-slim
@@ -51,9 +51,10 @@ USER catbus
 # Default environment variables
 ENV RUST_LOG=info
 
-# Expose WebTransport port (UDP for QUIC)
+# Expose WebTransport (UDP/QUIC) and WebSocket (TCP/HTTP) ports
 EXPOSE 4433/udp
+EXPOSE 8080/tcp
 
 # Run daemon in foreground (for Docker/k8s)
 ENTRYPOINT ["catbusd"]
-CMD ["--bind", "0.0.0.0:4433"]
+CMD ["--bind", "0.0.0.0:4433", "--ws-bind", "0.0.0.0:8080"]

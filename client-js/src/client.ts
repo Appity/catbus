@@ -3,6 +3,7 @@ import type {
   ClientMessage,
   ConnectionState,
   MessageHandler,
+  QueuedMessage,
   ServerMessage,
   StateChangeHandler,
   Subscription,
@@ -72,12 +73,17 @@ export class CatbusClient {
   private encoder = new TextEncoder();
   private decoder = new TextDecoder();
 
+  private offlineQueue: QueuedMessage[] = [];
+
   constructor(config: CatbusConfig) {
     this.config = {
       autoReconnect: true,
       reconnectDelay: 1000,
       maxReconnectDelay: 30000,
       pingInterval: 30000,
+      offlineQueue: true,
+      maxQueueSize: 100,
+      reconnectJitter: 0.3,
       ...config,
     };
   }
@@ -145,6 +151,9 @@ export class CatbusClient {
 
         // Resubscribe to existing subscriptions
         await this.resubscribe();
+
+        // Flush any queued messages from while we were disconnected
+        this.flushOfflineQueue();
       } else if (response.type === "auth_error") {
         throw new Error(`Authentication failed: ${response.message}`);
       } else {
@@ -205,10 +214,26 @@ export class CatbusClient {
 
   /**
    * Publish a message to a channel
+   *
+   * If disconnected and offlineQueue is enabled, messages are buffered
+   * and sent when the connection is restored.
    */
   async publish(channel: string, payload: unknown): Promise<void> {
+    // Queue if disconnected and offline queue is enabled
     if (this.state !== "connected") {
-      throw new Error("Not connected");
+      if (!this.config.offlineQueue) {
+        throw new Error("Not connected");
+      }
+
+      return new Promise((resolve, reject) => {
+        // Enforce max queue size by dropping oldest
+        while (this.offlineQueue.length >= this.config.maxQueueSize) {
+          const dropped = this.offlineQueue.shift();
+          dropped?.reject(new Error("Queue overflow - message dropped"));
+        }
+
+        this.offlineQueue.push({ channel, payload, resolve, reject });
+      });
     }
 
     await this.send({ type: "publish", channel, payload });
@@ -291,6 +316,48 @@ export class CatbusClient {
         await this.doSubscribe(pattern);
       } catch (e) {
         console.error(`Failed to resubscribe to ${pattern}:`, e);
+      }
+    }
+  }
+
+  private async flushOfflineQueue(): Promise<void> {
+    const queue = this.offlineQueue;
+    this.offlineQueue = [];
+
+    for (const msg of queue) {
+      try {
+        await this.send({ type: "publish", channel: msg.channel, payload: msg.payload });
+
+        // Wait for confirmation with timeout
+        await new Promise<void>((resolve, reject) => {
+          this.pendingPublishes.set(msg.channel, {
+            resolve: () => {
+              msg.resolve();
+              resolve();
+            },
+            reject: (e) => {
+              msg.reject(e);
+              reject(e);
+            },
+          });
+
+          setTimeout(() => {
+            if (this.pendingPublishes.has(msg.channel)) {
+              this.pendingPublishes.delete(msg.channel);
+              const err = new Error("Publish timeout");
+              msg.reject(err);
+              reject(err);
+            }
+          }, 10000);
+        });
+      } catch (e) {
+        // If we disconnect mid-flush, re-queue remaining messages
+        if (this.state !== "connected") {
+          const remaining = queue.slice(queue.indexOf(msg));
+          this.offlineQueue = [...remaining, ...this.offlineQueue];
+          break;
+        }
+        // Otherwise the individual message already got rejected
       }
     }
   }
@@ -441,10 +508,17 @@ export class CatbusClient {
   }
 
   private scheduleReconnect(): void {
-    const delay = Math.min(
+    let delay = Math.min(
       this.config.reconnectDelay * Math.pow(2, this.reconnectAttempts),
       this.config.maxReconnectDelay
     );
+
+    // Add jitter when at or near max delay to avoid thundering herd
+    if (delay >= this.config.maxReconnectDelay * 0.5) {
+      const jitter = delay * this.config.reconnectJitter * Math.random();
+      delay = delay + jitter;
+    }
+
     this.reconnectAttempts++;
 
     this.reconnectTimer = setTimeout(async () => {
@@ -520,6 +594,14 @@ export class CatbusClient {
       pending.reject(new Error("Disconnected"));
     }
     this.pendingPings.clear();
+
+    // Reject queued messages if not auto-reconnecting
+    if (!this.config.autoReconnect) {
+      for (const msg of this.offlineQueue) {
+        msg.reject(new Error("Disconnected"));
+      }
+      this.offlineQueue = [];
+    }
   }
 
   private setState(state: ConnectionState, error?: Error): void {
