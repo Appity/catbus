@@ -98,8 +98,15 @@ impl ClientConnection {
         self.subscriptions.read().iter().any(|p| p.matches(channel))
     }
 
-    /// Send a message to this client
-    pub async fn send(&self, msg: OutboundMessage) -> Result<(), mpsc::error::SendError<OutboundMessage>> {
+    /// Send a message to this client (non-blocking)
+    /// Returns Ok if message was queued, Err if buffer is full or receiver disconnected
+    pub fn send(&self, msg: OutboundMessage) -> Result<(), mpsc::error::TrySendError<OutboundMessage>> {
+        self.tx.try_send(msg)
+    }
+
+    /// Send a message to this client (async, waits for buffer space)
+    /// Use with caution - can block if receiver is slow
+    pub async fn send_async(&self, msg: OutboundMessage) -> Result<(), mpsc::error::SendError<OutboundMessage>> {
         self.tx.send(msg).await
     }
 }

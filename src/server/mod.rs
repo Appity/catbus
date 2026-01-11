@@ -6,6 +6,6 @@ mod connections;
 mod router;
 pub mod transport;
 
-pub use connections::{ClientConnection, ConnectionManager};
+pub use connections::{ClientConnection, ConnectionManager, OutboundMessage};
 pub use router::TopicRouter;
 pub use transport::{CatbusServer, CatbusServerConfig};

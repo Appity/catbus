@@ -3,7 +3,7 @@
 use crate::channels::Channel;
 use crate::server::connections::{ConnectionManager, OutboundMessage};
 use std::sync::Arc;
-use tracing::{debug, warn};
+use tracing::debug;
 
 /// Routes messages to subscribed clients
 #[derive(Clone)]
@@ -34,11 +34,12 @@ impl TopicRouter {
         };
 
         for subscriber in subscribers {
-            if let Err(e) = subscriber.send(msg.clone()).await {
-                warn!(
+            if let Err(e) = subscriber.send(msg.clone()) {
+                // Log at debug level - this is expected during rapid disconnect
+                debug!(
                     connection_id = %subscriber.id,
                     error = %e,
-                    "Failed to send message to subscriber"
+                    "Failed to send message to subscriber (buffer full or disconnected)"
                 );
             }
         }
@@ -63,7 +64,7 @@ impl TopicRouter {
         let mut sent = false;
         for conn in connections {
             if conn.should_receive(channel) {
-                if conn.send(msg.clone()).await.is_ok() {
+                if conn.send(msg.clone()).is_ok() {
                     sent = true;
                 }
             }

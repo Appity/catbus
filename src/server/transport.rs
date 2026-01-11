@@ -305,7 +305,7 @@ async fn handle_client_message(
                         let _ = conn.send(OutboundMessage {
                             channel: String::new(),
                             payload: serde_json::to_vec(&response).unwrap(),
-                        }).await;
+                        });
                     } else {
                         let response = ServerMessage::SubscribeError {
                             pattern: pattern.clone(),
@@ -314,7 +314,7 @@ async fn handle_client_message(
                         let _ = conn.send(OutboundMessage {
                             channel: String::new(),
                             payload: serde_json::to_vec(&response).unwrap(),
-                        }).await;
+                        });
                     }
                 }
                 Err(e) => {
@@ -325,7 +325,7 @@ async fn handle_client_message(
                     let _ = conn.send(OutboundMessage {
                         channel: String::new(),
                         payload: serde_json::to_vec(&response).unwrap(),
-                    }).await;
+                    });
                 }
             }
         }
@@ -336,7 +336,7 @@ async fn handle_client_message(
                 let _ = conn.send(OutboundMessage {
                     channel: String::new(),
                     payload: serde_json::to_vec(&response).unwrap(),
-                }).await;
+                });
             }
         }
         ClientMessage::Publish { channel, payload } => {
@@ -357,7 +357,7 @@ async fn handle_client_message(
                         let _ = conn.send(OutboundMessage {
                             channel: String::new(),
                             payload: serde_json::to_vec(&response).unwrap(),
-                        }).await;
+                        });
                     } else {
                         let response = ServerMessage::PublishError {
                             channel: channel.clone(),
@@ -366,7 +366,7 @@ async fn handle_client_message(
                         let _ = conn.send(OutboundMessage {
                             channel: String::new(),
                             payload: serde_json::to_vec(&response).unwrap(),
-                        }).await;
+                        });
                     }
                 }
                 Err(e) => {
@@ -377,7 +377,7 @@ async fn handle_client_message(
                     let _ = conn.send(OutboundMessage {
                         channel: String::new(),
                         payload: serde_json::to_vec(&response).unwrap(),
-                    }).await;
+                    });
                 }
             }
         }
@@ -386,7 +386,7 @@ async fn handle_client_message(
             let _ = conn.send(OutboundMessage {
                 channel: String::new(),
                 payload: serde_json::to_vec(&response).unwrap(),
-            }).await;
+            });
         }
     }
 }
