@@ -27,6 +27,31 @@ pub enum ClientMessage {
     Unsubscribe { pattern: String },
     /// Publish a message to a channel
     Publish { channel: String, payload: serde_json::Value },
+    /// Publish a Yjs document update (binary, base64-encoded)
+    /// Used for CRDT sync in collaborative editing
+    YjsUpdate {
+        /// Document channel (e.g., "doc.123")
+        channel: String,
+        /// Base64-encoded Yjs update binary
+        update: String,
+        /// Optional: client's origin identifier for deduplication
+        #[serde(skip_serializing_if = "Option::is_none")]
+        origin: Option<String>,
+    },
+    /// Publish Yjs awareness state (cursors, presence)
+    YjsAwareness {
+        /// Document channel (e.g., "doc.123")
+        channel: String,
+        /// Base64-encoded awareness update
+        update: String,
+    },
+    /// Request Yjs sync - asks for current state vector
+    YjsSyncRequest {
+        /// Document channel
+        channel: String,
+        /// Base64-encoded client's state vector
+        state_vector: String,
+    },
     /// Ping for keepalive
     Ping { seq: u64 },
 }
@@ -51,6 +76,30 @@ pub enum ServerMessage {
     PublishError { channel: String, message: String },
     /// Incoming message on a subscribed channel
     Message { channel: String, payload: serde_json::Value },
+    /// Incoming Yjs document update
+    YjsUpdate {
+        /// Document channel
+        channel: String,
+        /// Base64-encoded Yjs update binary
+        update: String,
+        /// Origin client (for local echo suppression)
+        #[serde(skip_serializing_if = "Option::is_none")]
+        origin: Option<String>,
+    },
+    /// Incoming Yjs awareness update
+    YjsAwareness {
+        /// Document channel
+        channel: String,
+        /// Base64-encoded awareness update
+        update: String,
+    },
+    /// Response to YjsSyncRequest with missing updates
+    YjsSyncResponse {
+        /// Document channel
+        channel: String,
+        /// Base64-encoded diff (updates the client is missing)
+        update: String,
+    },
     /// Pong response
     Pong { seq: u64 },
     /// Generic error
@@ -379,6 +428,80 @@ async fn handle_client_message(
                         payload: serde_json::to_vec(&response).unwrap(),
                     });
                 }
+            }
+        }
+        ClientMessage::YjsUpdate { channel, update, origin } => {
+            match Channel::parse(channel) {
+                Ok(ch) => {
+                    let allowed = conn.is_admin || conn.grants.can_write(&ch);
+
+                    if allowed {
+                        // Broadcast Yjs update to all subscribers
+                        let msg_bytes = serde_json::to_vec(&ServerMessage::YjsUpdate {
+                            channel: channel.clone(),
+                            update: update.clone(),
+                            origin: origin.clone(),
+                        }).unwrap();
+
+                        router.route(&ch, msg_bytes).await;
+
+                        // Ack the update
+                        let response = ServerMessage::Published { channel: channel.clone() };
+                        let _ = conn.send(OutboundMessage {
+                            channel: String::new(),
+                            payload: serde_json::to_vec(&response).unwrap(),
+                        });
+                    } else {
+                        let response = ServerMessage::PublishError {
+                            channel: channel.clone(),
+                            message: "Permission denied".to_string(),
+                        };
+                        let _ = conn.send(OutboundMessage {
+                            channel: String::new(),
+                            payload: serde_json::to_vec(&response).unwrap(),
+                        });
+                    }
+                }
+                Err(e) => {
+                    let response = ServerMessage::PublishError {
+                        channel: channel.clone(),
+                        message: e.to_string(),
+                    };
+                    let _ = conn.send(OutboundMessage {
+                        channel: String::new(),
+                        payload: serde_json::to_vec(&response).unwrap(),
+                    });
+                }
+            }
+        }
+        ClientMessage::YjsAwareness { channel, update } => {
+            // Awareness updates are fire-and-forget, no permission check needed
+            // (presence info is typically public within a document)
+            if let Ok(ch) = Channel::parse(channel) {
+                let msg_bytes = serde_json::to_vec(&ServerMessage::YjsAwareness {
+                    channel: channel.clone(),
+                    update: update.clone(),
+                }).unwrap();
+
+                router.route(&ch, msg_bytes).await;
+            }
+        }
+        ClientMessage::YjsSyncRequest { channel, state_vector } => {
+            // Sync requests are routed to other clients who may have the full state
+            // In a production system, you'd also check a server-side Yjs store
+            if let Ok(_ch) = Channel::parse(channel) {
+                let msg_bytes = serde_json::to_vec(&ServerMessage::YjsSyncResponse {
+                    channel: channel.clone(),
+                    // For now, echo back - in production, merge with server state
+                    update: state_vector.clone(),
+                }).unwrap();
+
+                // Send only to the requester for now
+                // TODO: Implement server-side Yjs doc storage for proper sync
+                let _ = conn.send(OutboundMessage {
+                    channel: String::new(),
+                    payload: msg_bytes,
+                });
             }
         }
         ClientMessage::Ping { seq } => {

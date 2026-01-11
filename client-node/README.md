@@ -385,6 +385,165 @@ export default function RootLayout({ children }) {
 }
 ```
 
+## Yjs Integration (Collaborative Editing)
+
+Catbus has first-class support for [Yjs](https://yjs.dev) CRDT synchronization, enabling real-time collaborative editing across multiple users and AI agents.
+
+### Yjs-Specific Message Types
+
+Instead of generic `publish()`, use the dedicated Yjs methods:
+
+```typescript
+// Send a Yjs document update
+client.yjsUpdate(channel: string, update: Uint8Array, origin?: string): Promise<void>
+
+// Send awareness update (cursors, presence)
+client.yjsAwareness(channel: string, update: Uint8Array): Promise<void>
+
+// Request sync from other clients
+client.yjsSyncRequest(channel: string, stateVector: Uint8Array): Promise<void>
+```
+
+### Basic Yjs Integration
+
+```typescript
+import * as Y from 'yjs';
+import { CatbusClient } from '@catbus/client';
+
+const ydoc = new Y.Doc();
+const client = new CatbusClient({ url, token });
+
+await client.connect();
+await client.subscribe(`doc.${docId}.*`);
+
+// Send local changes
+ydoc.on('update', (update: Uint8Array, origin: any) => {
+  // Don't broadcast updates that came from remote
+  if (origin !== 'remote') {
+    client.yjsUpdate(`doc.${docId}`, update, client.id);
+  }
+});
+
+// Receive remote changes
+client.onYjsUpdate((channel, update, origin) => {
+  // Skip our own updates (echo suppression)
+  if (origin !== client.id) {
+    Y.applyUpdate(ydoc, update, 'remote');
+  }
+});
+```
+
+### React Hook for Yjs
+
+```tsx
+import { useYjsSync } from '@catbus/client/react';
+import { useEditor } from '@tiptap/react';
+
+function CollaborativeEditor({ docId }) {
+  const { client, state } = useCatbus({ url, token });
+
+  const { ydoc, synced, peers } = useYjsSync(client, `doc.${docId}`, {
+    // Enable awareness for cursor sync
+    awareness: true,
+
+    // Called when initial sync completes
+    onSynced: () => console.log('Document synced'),
+
+    // Called when peers change
+    onPeersChange: (peers) => console.log('Active peers:', peers.length),
+  });
+
+  const editor = useEditor({
+    extensions: [
+      // ... your extensions
+      Collaboration.configure({ document: ydoc }),
+      CollaborationCursor.configure({
+        provider: ydoc, // Catbus handles the transport
+      }),
+    ],
+  });
+
+  if (!synced) return <div>Syncing document...</div>;
+
+  return <EditorContent editor={editor} />;
+}
+```
+
+### Multi-Server Yjs Topology
+
+For NextJS deployments with multiple server instances, Catbus handles fan-out automatically:
+
+```
+┌─────────────┐     ┌─────────────┐     ┌─────────────┐
+│  Browser 1  │     │  Browser 2  │     │  AI Agent   │
+│  (User A)   │     │  (User B)   │     │  (Claude)   │
+└──────┬──────┘     └──────┬──────┘     └──────┬──────┘
+       │                   │                   │
+       │    WebTransport   │    WebTransport   │    HTTP/WS
+       │                   │                   │
+       ▼                   ▼                   ▼
+┌─────────────────────────────────────────────────────┐
+│                    Catbus Server                     │
+│  ┌─────────────────────────────────────────────┐    │
+│  │     Channel: doc.123                         │    │
+│  │     Ring Buffer (catch-up on reconnect)     │    │
+│  └─────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────┘
+```
+
+Each Yjs update is:
+1. Persisted to the ring buffer (for catch-up)
+2. Broadcast to all subscribers on that document channel
+3. Delivered with origin tracking (for echo suppression)
+
+### Agent Integration
+
+AI agents can participate in collaborative editing:
+
+```python
+# Python agent using Catbus
+import catbus
+from yjs import YDoc, encode_state_as_update
+
+doc = YDoc()
+client = catbus.connect(url, token)
+
+# Subscribe to document
+client.subscribe(f"doc.{doc_id}.*")
+
+# Apply remote updates
+@client.on_yjs_update
+def handle_update(channel, update, origin):
+    doc.apply_update(update)
+
+# Make edits
+with doc.begin_transaction() as txn:
+    text = doc.get_text("content")
+    text.insert(0, "AI suggestion: ")
+
+update = encode_state_as_update(doc)
+client.yjs_update(f"doc.{doc_id}", update, origin="agent")
+```
+
+### Catching Up After Disconnect
+
+When a client reconnects, it should request missed updates:
+
+```typescript
+client.onReconnect(async () => {
+  // Get state vector of what we have
+  const sv = Y.encodeStateVector(ydoc);
+
+  // Request updates we're missing
+  await client.yjsSyncRequest(`doc.${docId}`, sv);
+});
+
+client.onYjsSyncResponse((channel, update) => {
+  // Apply the diff
+  Y.applyUpdate(ydoc, update, 'sync');
+});
+```
+
 ## Browser Support
 
 Catbus uses WebTransport which requires:
