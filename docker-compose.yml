@@ -1,0 +1,42 @@
+version: "3.8"
+
+services:
+  catbus:
+    build: .
+    ports:
+      - "4433:4433/udp"
+    environment:
+      - DATABASE_URL=postgres://catbus:catbus@postgres:5432/catbus
+      - CATBUS_SECRET=dev-secret-change-in-production
+      - CATBUS_ADMIN_KEY=admin-key-change-in-production
+      - RUST_LOG=info
+    volumes:
+      - ./certs:/app/certs:ro
+    command:
+      - serve
+      - --bind=0.0.0.0:4433
+      - --cert=/app/certs/cert.pem
+      - --key=/app/certs/key.pem
+      - --secret=${CATBUS_SECRET:-dev-secret}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=catbus
+      - POSTGRES_PASSWORD=catbus
+      - POSTGRES_DB=catbus
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U catbus"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "5432:5432"
+
+volumes:
+  postgres_data:

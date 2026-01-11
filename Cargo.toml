@@ -1,0 +1,61 @@
+[package]
+name = "catbus"
+version = "0.1.0"
+edition = "2021"
+description = "WebTransport-based message bus for real-time state synchronization"
+license = "MIT"
+readme = "README.md"
+
+[[bin]]
+name = "catbus"
+path = "src/main.rs"
+
+[lib]
+name = "catbus"
+path = "src/lib.rs"
+
+[dependencies]
+# Async runtime
+tokio = { version = "1.43", features = ["full"] }
+
+# WebTransport / QUIC
+wtransport = "0.6"
+
+# HTTP server (for health checks, REST API alongside WebTransport)
+axum = { version = "0.8", features = ["http2"] }
+tower = "0.5"
+tower-http = { version = "0.6", features = ["cors", "trace"] }
+
+# Postgres
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1", "with-uuid-1", "with-time-0_3"] }
+deadpool-postgres = "0.14"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Auth / crypto
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+
+# CLI
+clap = { version = "4.5", features = ["derive", "env"] }
+
+# Utilities
+async-trait = "0.1"
+thiserror = "2.0"
+anyhow = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+uuid = { version = "1.11", features = ["v4", "serde"] }
+time = { version = "0.3", features = ["serde"] }
+dashmap = "6.1"
+bytes = "1.9"
+futures = "0.3"
+dotenvy = "0.15"
+parking_lot = "0.12"
+
+[dev-dependencies]
+tokio-test = "0.4"

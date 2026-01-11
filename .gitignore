@@ -1,0 +1,9 @@
+.claude
+target/
+
+.vscode/
+*.swp
+
+*.log
+
+.DS_Store

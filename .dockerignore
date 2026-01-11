@@ -1,0 +1,30 @@
+# Build artifacts
+target/
+*.swp
+*.swo
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Git
+.git/
+.gitignore
+
+# Node client (built separately)
+client-node/node_modules/
+client-node/dist/
+
+# Documentation
+*.md
+!README.md
+
+# Local config
+.env
+.env.*
+
+# TLS certs (mount at runtime)
+*.pem
+*.crt
+*.key
